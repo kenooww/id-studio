@@ -199,10 +199,10 @@ export default function PrintPage() {
   const template = templates.find(t => t.id === selectedTmplId)
 
   const sampleData = [
-    { name: 'Andrea Brillantes',  id_number: 'EMP-001', photo_url: 'https://i.pravatar.cc/150?img=1',  extra_field: 'Grade 10', field_1: 'Blood: O+',  field_2: 'Emergency: 555-1234', field_3: 'Section A', field_4: '2024-01-15' },
-    { name: 'Kathryn Alida',      id_number: 'EMP-002', photo_url: 'https://i.pravatar.cc/150?img=5',  extra_field: 'Grade 11', field_1: 'Blood: A+',  field_2: 'Emergency: 555-5678', field_3: 'Section B', field_4: '2024-02-20' },
-    { name: 'student 1',          id_number: 'EMP-003', photo_url: 'https://i.pravatar.cc/150?img=8',  extra_field: 'Grade 9',  field_1: 'Blood: B+',  field_2: 'Emergency: 555-9012', field_3: 'Section C', field_4: '2024-03-10' },
-    { name: 'Andrea Brillantes 1',id_number: 'EMP-004', photo_url: 'https://i.pravatar.cc/150?img=9',  extra_field: 'Grade 12', field_1: 'Blood: AB+', field_2: 'Emergency: 555-3456', field_3: 'Section D', field_4: '2024-01-05' },
+    { name: 'Andrea Brillantes',   id_number: 'EMP-001', photo_url: 'https://randomuser.me/api/portraits/women/1.jpg', extra_field: 'Grade 10', field_1: 'Blood: O+',  field_2: 'Emergency: 555-1234', field_3: 'Section A', field_4: '2024-01-15' },
+    { name: 'Kathryn Alida',       id_number: 'EMP-002', photo_url: 'https://randomuser.me/api/portraits/women/2.jpg', extra_field: 'Grade 11', field_1: 'Blood: A+',  field_2: 'Emergency: 555-5678', field_3: 'Section B', field_4: '2024-02-20' },
+    { name: 'Student 1',           id_number: 'EMP-003', photo_url: 'https://randomuser.me/api/portraits/men/3.jpg',   extra_field: 'Grade 9',  field_1: 'Blood: B+',  field_2: 'Emergency: 555-9012', field_3: 'Section C', field_4: '2024-03-10' },
+    { name: 'Andrea Brillantes 1', id_number: 'EMP-004', photo_url: 'https://randomuser.me/api/portraits/women/4.jpg', extra_field: 'Grade 12', field_1: 'Blood: AB+', field_2: 'Emergency: 555-3456', field_3: 'Section D', field_4: '2024-01-05' },
   ]
   const data = sheetData.length > 0 ? sheetData : sampleData
 
@@ -280,26 +280,83 @@ export default function PrintPage() {
   const handleExportPDF = async () => {
     if (!template) return toast.error('Select a template first')
     setExporting(true)
-    const tid = toast.loading('Generating PDF…')
+    const tid = toast.loading('Preparing images…')
     try {
       const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
         import('jspdf'),
         import('html2canvas'),
       ])
+
+      // ── Step 1: collect all unique photo URLs in the data ──
+      const photoKeys = ['photo_url', 'photo', 'image', 'picture']
+      const urlSet = new Set()
+      data.forEach(row => {
+        photoKeys.forEach(k => { if (row[k]) urlSet.add(row[k]) })
+      })
+
+      // ── Step 2: fetch each URL and convert to base64 ───────
+      const urlToBase64 = {}
+      await Promise.allSettled([...urlSet].map(async (url) => {
+        try {
+          // Normalize Google Drive URLs first
+          let fetchUrl = url
+          const driveFile = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/)
+          if (driveFile) fetchUrl = `https://drive.google.com/thumbnail?id=${driveFile[1]}&sz=w200`
+          const driveOpen = url.match(/[?&]id=([a-zA-Z0-9_-]+)/)
+          if (driveOpen && url.includes('drive.google.com')) fetchUrl = `https://drive.google.com/thumbnail?id=${driveOpen[1]}&sz=w200`
+
+          const res = await fetch(fetchUrl, { mode: 'cors', cache: 'force-cache' })
+          if (!res.ok) return
+          const blob = await res.blob()
+          await new Promise((resolve) => {
+            const reader = new FileReader()
+            reader.onload = () => { urlToBase64[url] = reader.result; resolve() }
+            reader.onerror = resolve
+            reader.readAsDataURL(blob)
+          })
+        } catch { /* skip failed images — they'll show placeholder */ }
+      }))
+
+      // ── Step 3: swap img src to base64 in the DOM ──────────
+      const printEls = printAreaRef.current?.querySelectorAll('.print-page-inner')
+      if (!printEls?.length) throw new Error('No pages found')
+
+      const allImgs = printAreaRef.current.querySelectorAll('img[src]')
+      const origSrcs = []
+      allImgs.forEach(img => {
+        origSrcs.push(img.src)
+        const b64 = urlToBase64[img.src] || urlToBase64[img.getAttribute('src')]
+        if (b64) img.src = b64
+      })
+
+      // ── Step 4: wait a frame for images to repaint ─────────
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+      toast.dismiss(tid)
+      const tid2 = toast.loading(`Rendering ${printEls.length} page(s)…`)
+
+      // ── Step 5: capture each page ──────────────────────────
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-      const els = printAreaRef.current?.querySelectorAll('.print-page-inner')
-      if (!els?.length) throw new Error('No pages found')
-      for (let i = 0; i < els.length; i++) {
-        const canvas = await html2canvas(els[i], { scale: 2, useCORS: true, backgroundColor: '#ffffff' })
+      for (let i = 0; i < printEls.length; i++) {
+        const canvas = await html2canvas(printEls[i], {
+          scale: 2,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#ffffff',
+          logging: false,
+          imageTimeout: 0,
+        })
         if (i > 0) pdf.addPage()
-        pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, 210, 297)
+        pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, 210, 297)
       }
+
+      // ── Step 6: restore original img srcs ──────────────────
+      allImgs.forEach((img, i) => { img.src = origSrcs[i] })
+
       pdf.save(`id-cards-${Date.now()}.pdf`)
       incrementGenerated(data.length)
-      toast.dismiss(tid)
+      toast.dismiss(tid2)
       toast.success('PDF exported!')
     } catch (e) {
-      toast.dismiss(tid)
       toast.error('Export failed: ' + e.message)
     } finally {
       setExporting(false)

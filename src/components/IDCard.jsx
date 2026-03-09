@@ -217,37 +217,45 @@ export function FieldRenderer({ field, data = {}, scale = 1, inline = false }) {
   if (field.type === 'text') {
     const align = s.textAlign || 'left'
     const justifyMap = { left: 'flex-start', center: 'center', right: 'flex-end' }
-    const strokeVal = s.strokeWidth > 0
-      ? `${s.strokeWidth * scale}px ${s.strokeColor || s.stroke || '#000000'}`
+    const strokeW = s.strokeWidth || 0
+    const strokeVal = strokeW > 0
+      ? `${strokeW * scale}px ${s.strokeColor || s.stroke || '#000000'}`
       : undefined
     const shadowVal = (s.shadowBlur || 0) > 0
       ? `${(s.shadowX || 0) * scale}px ${(s.shadowY || 2) * scale}px ${(s.shadowBlur || 0) * scale}px ${s.shadowColor || 'rgba(0,0,0,0.8)'}`
       : undefined
+    // Add padding to prevent stroke/shadow from being clipped at edges
+    const clipPad = Math.max(strokeW * scale * 2, (s.shadowBlur || 0) * scale + Math.abs((s.shadowY || 0) * scale)) + 2
     return (
       <div style={{
         ...baseStyle,
-        fontFamily: s.fontFamily || 'Arial, sans-serif',
-        fontSize: (s.fontSize || 14) * scale,
-        color: s.fontColor || '#ffffff',
-        fontWeight: s.fontWeight || 'normal',
-        fontStyle: s.fontStyle || 'normal',
-        letterSpacing: s.letterSpacing || 0,
-        lineHeight: s.lineHeight || 1.4,
-        textAlign: align,
-        WebkitTextStroke: strokeVal,
-        paintOrder: 'stroke fill',
-        textShadow: shadowVal,
+        overflow: 'visible',   // allow stroke/shadow to bleed outside
         display: 'flex',
         alignItems: 'center',
         justifyContent: justifyMap[align] || 'flex-start',
-        whiteSpace: 'nowrap',
-        overflow: 'hidden',
       }}>
         <span style={{
-          display: 'block', width: '100%', textAlign: align,
-          overflow: 'hidden', textOverflow: 'ellipsis',
+          display: 'block',
+          width: '100%',
+          padding: `${clipPad}px 0`,
+          margin: `-${clipPad}px 0`,
+          fontFamily: s.fontFamily || 'Arial, sans-serif',
+          fontSize: (s.fontSize || 14) * scale,
+          color: s.fontColor || '#ffffff',
+          fontWeight: s.fontWeight || 'normal',
+          fontStyle: s.fontStyle || 'normal',
+          letterSpacing: s.letterSpacing || 0,
+          lineHeight: s.lineHeight || 1.4,
+          textAlign: align,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          WebkitTextStroke: strokeVal,
+          paintOrder: 'stroke fill',
+          textShadow: shadowVal,
           textDecoration: s.textDecoration || 'none',
           textTransform: s.textTransform || 'none',
+          boxSizing: 'border-box',
         }}>
           {value || <span style={{ opacity: 0.3, fontStyle: 'italic', WebkitTextStroke: 'unset', textShadow: 'none', textDecoration: 'none', textTransform: 'none' }}>{field.label}</span>}
         </span>

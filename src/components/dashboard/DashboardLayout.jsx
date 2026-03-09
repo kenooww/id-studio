@@ -39,7 +39,7 @@ export default function DashboardLayout() {
               <CreditCard className="w-5 h-5 text-violet-400" />
             </div>
             <div>
-              <span className="font-display font-bold text-white text-lg leading-none">IDStudio</span>
+              <span className="font-display font-bold text-white text-lg leading-none">IDForge</span>
               <p className="text-xs text-white/30 mt-0.5">ID Card System</p>
             </div>
           </div>
